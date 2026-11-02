@@ -272,12 +272,13 @@ void push_audio(const std::int16_t *samples, std::size_t frames) {
 double audio_queued_ms() { return static_cast<double>(g_audio.write.load() - g_audio.read.load()) / 48.0; }
 
 double g_next_frame = 0.0;
+std::atomic<double> g_audio_target_ms{80.0};
 std::atomic<double> g_emulation_idle{0.0}, g_render_idle{0.0};
 
 void pace() {
     ps2::post_present();
     if (g_audio.active.load()) {
-        while (audio_queued_ms() > 80.0) usleep(1000);
+        while (audio_queued_ms() > g_audio_target_ms.load()) usleep(1000);
         g_next_frame = 0.0;
         return;
     }
@@ -358,6 +359,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE int ps2web_quick_state(int loading) {
 std::atomic<bool> g_streaming{false};
 
 extern "C" EMSCRIPTEN_KEEPALIVE void ps2web_stream(int on) { g_streaming.store(on != 0); }
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ps2web_low_latency(int on) {
+    ps2::set_present_backlog(on ? 1u : 2u);
+    g_audio_target_ms.store(on ? 50.0 : 80.0);
+}
 
 extern "C" EMSCRIPTEN_KEEPALIVE void ps2web_video_options(int flags) { ps2::set_video_options(static_cast<std::uint32_t>(flags)); }
 

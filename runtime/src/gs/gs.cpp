@@ -1190,11 +1190,17 @@ void flush_and_wait() {
 
 void start_thread() { queue::render().start(32u << 20); }
 
+// How many finished frames the emulation may have waiting for the render thread.
+// Each one is a frame between reading the controller and showing the result.
+std::atomic<std::uint32_t> g_present_backlog{2};
+
+void set_present_backlog(std::uint32_t frames) { g_present_backlog.store(frames); }
+
 void post_present() {
     const DisplayRegs regs = display_regs();
     queue::post(queue::kPresent, 0, 0, &regs, sizeof regs);
     ++g_posted_presents;
-    for (std::uint32_t done = g_presented.load(); g_posted_presents - done > 2; done = g_presented.load()) queue::wait(g_presented, done);
+    for (std::uint32_t done = g_presented.load(); g_posted_presents - done > g_present_backlog.load(); done = g_presented.load()) queue::wait(g_presented, done);
 }
 
 Rendered render_pending(const std::function<void(const DisplayRegs &)> &on_present, double budget_ms) {

@@ -121,6 +121,7 @@ double vu_thread_idle_ms();
 double thread_waited_ms(int role);
 std::uint64_t vu1_interpreted_calls();
 void post_present();
+void set_present_backlog(std::uint32_t frames);
 enum class Rendered { idle, presented, busy };
 Rendered render_pending(bool surface, const std::function<void(const std::uint32_t *rgba, std::uint32_t width, std::uint32_t height)> &copy,
                         const std::function<void()> &before_present, double budget_ms);

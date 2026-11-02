@@ -546,6 +546,7 @@ void run_vu_thread() {
     }
 }
 void post_present() { gs::post_present(); }
+void set_present_backlog(std::uint32_t frames) { gs::set_present_backlog(frames); }
 
 Rendered render_pending(bool surface, const std::function<void(const std::uint32_t *, std::uint32_t, std::uint32_t)> &copy,
                         const std::function<void()> &before_present, double budget_ms) {

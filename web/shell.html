@@ -20,10 +20,24 @@
   #stats { font-variant-numeric: tabular-nums; color: #9ad; }
   select { background: #2a3a55; color: #fff; border: 0; padding: 5px 8px; border-radius: 4px; }
   button { background: #2a3a55; color: #fff; border: 0; padding: 6px 14px; border-radius: 4px; cursor: pointer; }
-  #aa-label, #stats-label { display: flex; align-items: center; gap: 6px; color: #9ad; white-space: nowrap; }
+  #aa-label, #stats-label, #latency-label { display: flex; align-items: center; gap: 6px; color: #9ad; white-space: nowrap; }
   #menu { position: fixed; right: 8px; z-index: 4; display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
     background: #141418; border: 1px solid #2a2a33; border-radius: 8px; max-height: 70vh; overflow-y: auto; }
   #menu[hidden] { display: none; }
+  #pad-config { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5; display: flex; flex-direction: column; gap: 10px; padding: 14px;
+    width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; background: #141418; border: 1px solid #2a2a33; border-radius: 8px; color: #dde; }
+  #pad-config[hidden] { display: none; }
+  #pad-config .head { display: flex; gap: 8px; }
+  #pad-config .head select { flex: 1; min-width: 0; }
+  #pad-config p { margin: 0; color: #9ad; font-size: 13px; line-height: 1.4; }
+  #pc-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+  #pc-rows .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  #pc-rows .row.on { background: #2f5d3a; }
+  #pc-rows .row button { padding: 4px 8px; min-width: 76px; font-size: 12px; }
+  #pc-rows .row.wait button { background: #8a6d1f; }
+  #pad-config label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9ad; }
+  #pad-config input[type=range] { flex: 1; }
+  @media (max-width: 480px) { #pc-rows { grid-template-columns: 1fr; } }
   body.touch #menu button, body.touch #menu select { padding: 8px 12px; font-size: 14px; }
   #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.6); padding: 16px; }
   #panel { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 520px; text-align: center; }
@@ -139,11 +153,13 @@
   <select id="pad" aria-label="Player 1 gamepad" title="Gamepad for player 1, the next connected one is player 2 (press a button on a pad if it is missing)">
     <option value="">Pad: auto</option>
   </select>
+  <button id="pad-config-open" type="button" title="Choose which gamepad control does what, the stick dead zone and vibration">Configure gamepad</button>
   <button id="save-state" class="host-only" type="button" disabled title="Save the game to this device">Save state</button>
   <button id="load-state" class="host-only" type="button" disabled title="Load the quick save from this device">Load state</button>
   <button id="export-state" class="host-only" type="button" title="Download the quick save as a .state file">Export state</button>
   <button id="import-state" class="host-only" type="button" title="Make a .state file the quick save">Import state</button>
   <input id="import-state-file" type="file" accept=".state" hidden>
+  <label id="latency-label" class="host-only" title="Keeps fewer frames and less sound queued. Turn it off if the game stutters or the sound crackles"><input id="latency" type="checkbox"> Low latency</label>
   <label id="aa-label" class="host-only" title="Smooth jagged edges, applied immediately"><input id="aa" type="checkbox" disabled> Smooth edges</label>
   <label id="stats-label"><input id="stats-toggle" type="checkbox"> Show stats</label>
   <button id="controls-toggle" type="button" hidden>Hide controls</button>
@@ -152,6 +168,16 @@
   <input id="import-file" type="file" accept=".ps2" hidden>
 </div>
 <button id="exit-fullscreen" type="button">Exit fullscreen</button>
+<div id="pad-config" role="dialog" aria-label="Gamepad settings" hidden>
+  <div class="head"><select id="pc-pad" aria-label="Gamepad to configure"></select><button id="pc-close" type="button">Close</button></div>
+  <p id="pc-note"></p>
+  <div id="pc-rows"></div>
+  <label>Stick dead zone <input id="pc-deadzone" type="range" min="0" max="40" step="1"><span id="pc-deadzone-value"></span></label>
+  <label><input id="pc-invert-l" type="checkbox"> Invert left stick up/down</label>
+  <label><input id="pc-invert-r" type="checkbox"> Invert right stick up/down</label>
+  <label><input id="pc-rumble" type="checkbox"> Vibration</label>
+  <button id="pc-reset" type="button">Reset this gamepad to defaults</button>
+</div>
 <div id="overlay"><div id="panel"><p id="help" hidden></p><button id="start" disabled>Loading…</button></div></div>
 <template id="engine">{{{ SCRIPT }}}</template>
 <script>
@@ -601,11 +627,224 @@ const keys = new Set();
 const keyMap = { ArrowUp: 4, ArrowRight: 5, ArrowDown: 6, ArrowLeft: 7, KeyZ: 14, KeyX: 13, KeyA: 15, KeyS: 12,
                  KeyQ: 10, KeyW: 11, Digit1: 8, Digit2: 9, Enter: 3, Backspace: 0 };
 const stickKeys = new Set(['KeyI', 'KeyJ', 'KeyK', 'KeyL']);
-window.addEventListener('keydown', (e) => { if (e.code in keyMap || stickKeys.has(e.code)) { keys.add(e.code); e.preventDefault(); } });
-window.addEventListener('keyup', (e) => { keys.delete(e.code); });
+window.addEventListener('keydown', (e) => {
+  if (padConfigOpen || !(e.code in keyMap || stickKeys.has(e.code))) return;
+  keys.add(e.code);
+  e.preventDefault();
+  if (Module.running) pollInput();
+});
+window.addEventListener('keyup', (e) => {
+  keys.delete(e.code);
+  if (Module.running) pollInput();
+});
 const padButtons = [[0, 14], [1, 13], [2, 15], [3, 12], [4, 10], [5, 11], [6, 8], [7, 9], [8, 0], [9, 3], [10, 1], [11, 2],
                     [12, 4], [13, 6], [14, 7], [15, 5]];
 const axis = (v) => Math.max(0, Math.min(255, Math.round((v + 1) * 127.5)));
+// What each PS2 control reads, per kind of gamepad: { b: button } or, for a pad that reports it as an axis,
+// { a: axis, r: its rest value, s: direction } or { a: axis, hat: position } for a D-pad reported as one axis.
+const padControls = [['Cross', 14], ['Circle', 13], ['Square', 15], ['Triangle', 12], ['L1', 10], ['R1', 11], ['L2', 8], ['R2', 9],
+                     ['L3', 1], ['R3', 2], ['Select', 0], ['Start', 3], ['D-pad up', 4], ['D-pad down', 6], ['D-pad left', 7], ['D-pad right', 5]];
+const padSticks = [['Left stick right', 'lx'], ['Left stick down', 'ly'], ['Right stick right', 'rx'], ['Right stick down', 'ry']];
+const padMaps = new Map();
+function defaultPadMap() {
+  const buttons = {};
+  for (const [index, bit] of padButtons) buttons[bit] = { b: index };
+  return { buttons, lx: { a: 0, s: 1 }, ly: { a: 1, s: 1 }, rx: { a: 2, s: 1 }, ry: { a: 3, s: 1 }, deadzone: 8, rumble: true };
+}
+function padMap(gamepad) {
+  let map = padMaps.get(gamepad.id);
+  if (!map) {
+    map = defaultPadMap();
+    try { Object.assign(map, JSON.parse(localStorage.getItem('ps2web-padmap:' + gamepad.id))); } catch (e) {}
+    padMaps.set(gamepad.id, map);
+  }
+  return map;
+}
+function savePadMap(gamepad) {
+  try { localStorage.setItem('ps2web-padmap:' + gamepad.id, JSON.stringify(padMap(gamepad))); } catch (e) {}
+}
+// how far a control is pressed, 0 to 1
+function padAmount(gamepad, source) {
+  if (!source) return 0;
+  if ('b' in source) {
+    const b = gamepad.buttons[source.b];
+    return b && (b.pressed || b.value > 0.05) ? (b.value > 0 ? b.value : 1) : 0;
+  }
+  const v = gamepad.axes[source.a];
+  if (v === undefined) return 0;
+  if ('hat' in source) {
+    if (Math.abs(v) > 1.05) return 0;
+    const apart = Math.abs(Math.round((v + 1) * 3.5) - source.hat) % 8;
+    return Math.min(apart, 8 - apart) <= 1 ? 1 : 0;
+  }
+  const amount = (v - source.r) * source.s / ((source.s > 0 ? 1 - source.r : 1 + source.r) || 1);
+  return amount > 0.5 ? Math.min(1, amount) : 0;
+}
+const stickAxis = (gamepad, source) => {
+  const v = source ? gamepad.axes[source.a] : undefined;
+  return v === undefined ? 0 : v * source.s;
+};
+function deadZoned(x, y, percent) {
+  const zone = percent / 100, size = Math.hypot(x, y);
+  if (size <= zone) return [0, 0];
+  const gain = (size - zone) / (1 - zone) / size;
+  return [x * gain, y * gain];
+}
+
+const padConfig = document.getElementById('pad-config');
+const pcPad = document.getElementById('pc-pad'), pcRows = document.getElementById('pc-rows'), pcNote = document.getElementById('pc-note');
+const pcDeadzone = document.getElementById('pc-deadzone'), pcDeadzoneValue = document.getElementById('pc-deadzone-value');
+const pcInvertL = document.getElementById('pc-invert-l'), pcInvertR = document.getElementById('pc-invert-r'), pcRumble = document.getElementById('pc-rumble');
+let padConfigOpen = false, padConfigIndex = -1, padCapture = null;
+const connectedPads = () => [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter((pad) => pad);
+const configuredPad = () => connectedPads().find((pad) => pad.index === padConfigIndex) || null;
+const describeSource = (source) => !source ? 'none' : 'b' in source ? 'Button ' + source.b : 'hat' in source ? 'Hat ' + source.hat
+  : 'Axis ' + source.a + (source.s < 0 ? ' −' : ' +');
+const pcRowList = [...padControls.map(([label, bit]) => ({ label, bit })), ...padSticks.map(([label, stick]) => ({ label, stick }))];
+for (const row of pcRowList) {
+  row.el = document.createElement('div');
+  row.el.className = 'row';
+  row.button = document.createElement('button');
+  row.button.type = 'button';
+  row.button.addEventListener('click', () => {
+    padCapture = padCapture && padCapture.row === row ? null : { row, axes: null, pressed: null };
+    drawPadConfig();
+  });
+  row.el.append(row.label, row.button);
+  pcRows.append(row.el);
+}
+function drawPadConfig() {
+  const pads = connectedPads();
+  if (!pads.some((pad) => pad.index === padConfigIndex)) padConfigIndex = pads.length ? orderedPads()[0].index : -1;
+  pcPad.replaceChildren(...pads.map((pad) => new Option('Pad ' + (pad.index + 1) + ': ' + pad.id.replace(/\s*\(.*$/, '').slice(0, 40), String(pad.index))));
+  pcPad.value = String(padConfigIndex);
+  const gamepad = configuredPad();
+  pcNote.textContent = !gamepad ? 'No gamepad found. Press a button on one so the browser shows it.'
+    : padCapture ? (padCapture.row.stick ? 'Move the stick the way this row says.' : 'Press the button you want.') + ' Esc cancels.'
+    : 'Click a control to change it. A control lights up while you use it.' + (gamepad.mapping === 'standard' ? '' : ' The browser does not know this gamepad\'s layout, so check every control.');
+  for (const element of [pcDeadzone, pcInvertL, pcInvertR, pcRumble]) element.disabled = !gamepad;
+  for (const row of pcRowList) {
+    row.button.disabled = !gamepad;
+    const waiting = !!padCapture && padCapture.row === row;
+    row.el.classList.toggle('wait', waiting);
+    row.button.textContent = waiting ? 'Waiting…' : gamepad ? describeSource(row.stick ? padMap(gamepad)[row.stick] : padMap(gamepad).buttons[row.bit]) : '—';
+  }
+  if (!gamepad) return;
+  const map = padMap(gamepad);
+  pcDeadzone.value = map.deadzone;
+  pcDeadzoneValue.textContent = map.deadzone + '%';
+  pcInvertL.checked = !!map.ly && map.ly.s < 0;
+  pcInvertR.checked = !!map.ry && map.ry.s < 0;
+  pcRumble.checked = map.rumble;
+}
+function capturePadInput(gamepad) {
+  const { row } = padCapture;
+  if (!padCapture.axes) {
+    padCapture.axes = [...gamepad.axes];
+    padCapture.pressed = gamepad.buttons.map((b) => b.pressed);
+    return;
+  }
+  const map = padMap(gamepad);
+  let found = null;
+  if (!row.stick) {
+    const button = gamepad.buttons.findIndex((b, i) => b.pressed && !padCapture.pressed[i]);
+    if (button >= 0) found = { b: button };
+  }
+  for (let i = 0; !found && i < gamepad.axes.length; ++i) {
+    const v = gamepad.axes[i], rest = padCapture.axes[i];
+    if (row.stick) {
+      if (Math.abs(v - rest) > 0.5) found = { a: i, s: v > rest ? 1 : -1 };
+    } else if (Math.abs(rest) > 1.05 && Math.abs(v) <= 1.05) {
+      found = { a: i, hat: Math.round((v + 1) * 3.5) };
+    } else if (Math.abs(v - rest) > 0.5) {
+      found = { a: i, r: rest, s: v > rest ? 1 : -1 };
+    }
+  }
+  if (!found) return;
+  if (row.stick) {
+    map[row.stick] = found;
+  } else {
+    const same = JSON.stringify(found);
+    for (const [bit, source] of Object.entries(map.buttons)) if (JSON.stringify(source) === same) delete map.buttons[bit];
+    map.buttons[row.bit] = found;
+  }
+  savePadMap(gamepad);
+  padCapture = null;
+  drawPadConfig();
+}
+function padConfigFrame() {
+  if (!padConfigOpen) return;
+  const gamepad = configuredPad();
+  if (gamepad) {
+    if (padCapture) capturePadInput(gamepad);
+    const map = padMap(gamepad);
+    for (const row of pcRowList) {
+      const on = row.stick ? Math.abs(stickAxis(gamepad, map[row.stick])) > 0.5 : padAmount(gamepad, map.buttons[row.bit]) > 0;
+      row.el.classList.toggle('on', on);
+    }
+  }
+  requestAnimationFrame(padConfigFrame);
+}
+function setPadConfig(open) {
+  padConfigOpen = open;
+  padConfig.hidden = !open;
+  padCapture = null;
+  if (open) {
+    setMenu(false);
+    drawPadConfig();
+    requestAnimationFrame(padConfigFrame);
+  } else {
+    canvas.focus();
+  }
+}
+document.getElementById('pad-config-open').addEventListener('click', () => setPadConfig(true));
+document.getElementById('pc-close').addEventListener('click', () => setPadConfig(false));
+window.addEventListener('keydown', (e) => {
+  if (!padConfigOpen || e.code !== 'Escape') return;
+  e.preventDefault();
+  if (padCapture) {
+    padCapture = null;
+    drawPadConfig();
+  } else {
+    setPadConfig(false);
+  }
+});
+pcPad.addEventListener('change', () => {
+  padConfigIndex = Number(pcPad.value);
+  padCapture = null;
+  drawPadConfig();
+});
+pcDeadzone.addEventListener('input', () => {
+  const gamepad = configuredPad();
+  if (!gamepad) return;
+  padMap(gamepad).deadzone = Number(pcDeadzone.value);
+  savePadMap(gamepad);
+  drawPadConfig();
+});
+for (const [input, stick] of [[pcInvertL, 'ly'], [pcInvertR, 'ry']]) {
+  input.addEventListener('change', () => {
+    const gamepad = configuredPad();
+    const source = gamepad && padMap(gamepad)[stick];
+    if (!source) return;
+    source.s = input.checked ? -Math.abs(source.s) : Math.abs(source.s);
+    savePadMap(gamepad);
+  });
+}
+pcRumble.addEventListener('change', () => {
+  const gamepad = configuredPad();
+  if (!gamepad) return;
+  padMap(gamepad).rumble = pcRumble.checked;
+  savePadMap(gamepad);
+});
+document.getElementById('pc-reset').addEventListener('click', () => {
+  const gamepad = configuredPad();
+  if (!gamepad) return;
+  padMaps.set(gamepad.id, defaultPadMap());
+  try { localStorage.removeItem('ps2web-padmap:' + gamepad.id); } catch (e) {}
+  padCapture = null;
+  drawPadConfig();
+});
+
 // the keyboard and touch controls are player 1 along with the first gamepad, a second gamepad is player 2
 const players = [0, 1].map(() => ({ plugged: false, pad: -1, pressure: '', strong: 0, weak: 0, rumbleAt: 0 }));
 const motorStrength = (v) => v < 16 ? 0 : Math.sqrt(v / 255);
@@ -619,7 +858,9 @@ function pollPlayer(port, gamepad, own) {
   if (!plugged) return;
   let buttons = 0, lx = 128, ly = 128, rx = 128, ry = 128;
   const pressure = new Array(16).fill(255);
-  if (own) {
+  // nothing reaches the game while the gamepad settings are open
+  const live = padConfigOpen ? null : gamepad;
+  if (own && !padConfigOpen) {
     buttons |= touchPad.buttons;
     for (const k of keys) if (k in keyMap) buttons |= 1 << keyMap[k];
     if (keys.has('KeyJ')) lx = 0;
@@ -632,19 +873,20 @@ function pollPlayer(port, gamepad, own) {
     }
   }
   const full = buttons;
-  if (gamepad) {
-    for (const [index, bit] of padButtons) {
-      const b = gamepad.buttons[index];
-      if (!b || !(b.pressed || b.value > 0.05)) continue;
+  if (live) {
+    const map = padMap(live);
+    for (const [, bit] of padControls) {
+      const amount = padAmount(live, map.buttons[bit]);
+      if (!amount) continue;
       buttons |= 1 << bit;
-      if (!(full & (1 << bit))) pressure[bit] = Math.max(1, Math.round((b.value > 0 ? b.value : 1) * 255));
+      if (!(full & (1 << bit))) pressure[bit] = Math.max(1, Math.round(amount * 255));
     }
-    if (gamepad.axes.length >= 4) {
-      if (lx === 128) lx = axis(gamepad.axes[0]);
-      if (ly === 128) ly = axis(gamepad.axes[1]);
-      rx = axis(gamepad.axes[2]);
-      ry = axis(gamepad.axes[3]);
-    }
+    const [leftX, leftY] = deadZoned(stickAxis(live, map.lx), stickAxis(live, map.ly), map.deadzone);
+    const [rightX, rightY] = deadZoned(stickAxis(live, map.rx), stickAxis(live, map.ry), map.deadzone);
+    if (lx === 128) lx = axis(leftX);
+    if (ly === 128) ly = axis(leftY);
+    rx = axis(rightX);
+    ry = axis(rightY);
   }
   const state = buttons + lx * 65536 + ly * 16777216 + rx * 4294967296 + ry * 1099511627776;
   if (state !== player.pad) {
@@ -658,7 +900,7 @@ function pollPlayer(port, gamepad, own) {
   }
   const rumble = Module._ps2web_rumble(port), now = performance.now();
   const strong = motorStrength(rumble >> 8), weak = rumble & 1;
-  const actuator = gamepad && gamepad.vibrationActuator;
+  const actuator = gamepad && padMap(gamepad).rumble ? gamepad.vibrationActuator : null;
   if (actuator && (Math.abs(strong - player.strong) > 0.08 || weak !== player.weak || ((strong || weak) && now - player.rumbleAt > 100))) {
     player.strong = strong;
     player.weak = weak;
@@ -680,6 +922,7 @@ function listPads() {
   if (padChoice && !pads.some((pad) => String(pad.index) === padChoice)) options.push([padChoice, 'P1: pad ' + (Number(padChoice) + 1) + ' (not connected)']);
   padSelect.replaceChildren(...options.map(([value, text]) => new Option(text, value)));
   padSelect.value = padChoice;
+  if (padConfigOpen) drawPadConfig();
 }
 padSelect.addEventListener('change', () => {
   padChoice = padSelect.value;
@@ -700,6 +943,16 @@ function pollInput() {
   if (remotePlayer && performance.now() - remoteSeen > 3000) (guestLeaves.get(remotePlayer) || releaseRemote)(remotePlayer);
   if (!remotePlayer) pollPlayer(1, pads[1] || null, false);
 }
+// Reads the controls every 4 ms instead of once per frame shown, so a press waits as little as it can for the game to see it.
+setInterval(() => { if (Module.running) pollInput(); }, 4);
+
+const latencyInput = document.getElementById('latency');
+try { latencyInput.checked = localStorage.getItem('ps2web-latency') !== '0'; } catch (e) { latencyInput.checked = true; }
+const applyLatency = () => { if (Module.running) Module._ps2web_low_latency(latencyInput.checked ? 1 : 0); };
+latencyInput.addEventListener('change', () => {
+  try { localStorage.setItem('ps2web-latency', latencyInput.checked ? '1' : '0'); } catch (e) {}
+  applyLatency();
+});
 
 const rtcConfig = { iceServers: [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }] };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1187,6 +1440,7 @@ document.getElementById('start').addEventListener('click', async () => {
   await startAudio();
   statusEl.textContent = 'Running, ' + Module.gpuInfo;
   Module.running = true;
+  applyLatency();
   setStateBusy(false);
   inviteButton.disabled = false;
   Module.callMain(Module.arguments);
