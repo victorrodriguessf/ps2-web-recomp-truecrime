@@ -246,10 +246,7 @@ void run_chain(int ch) {
         const std::uint32_t addr = static_cast<std::uint32_t>(tag >> 32) & 0x7FFFFFF0u;
         const std::uint32_t addr_full = addr | (static_cast<std::uint32_t>(tag >> 63) << 31);
         if (tte && (ch == 0 || ch == 1)) {
-            std::uint8_t q[16];
-            std::memcpy(q, tagp, 16);
-            std::memset(q, 0, 8);
-            vif::transfer(ch, q, 1);
+            vif::transfer_tag(ch, tagp);
         }
         bool end = false;
         const std::uint32_t tag_at = c.tadr;

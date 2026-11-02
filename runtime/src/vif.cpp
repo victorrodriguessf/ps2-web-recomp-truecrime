@@ -321,6 +321,20 @@ void transfer(int unit, const std::uint8_t *data, std::uint32_t qwc) {
     process(unit);
 }
 
+void transfer_tag(int unit, const std::uint8_t *tag) {
+    if (shadow(unit)) gs::queue::vu().post(gs::queue::kVif1Tag, 0, 0, tag, 16);
+    Unit &u = state(unit);
+    // The VIF gets a tag's upper half, with the lower half reading as two NOPs. A tag
+    // in the middle of a command has only its upper half feed that command's data:
+    // True Crime: New York City splits an UNPACK across a REF and the CNT after it,
+    // with the words between them in that CNT's tag.
+    std::uint32_t words[2];
+    std::memcpy(words, tag + 8, 8);
+    if (u.pending.empty() || u.stalled) u.pending.insert(u.pending.end(), 2, 0u);
+    u.pending.insert(u.pending.end(), words, words + 2);
+    process(unit);
+}
+
 bool stalled(int unit) { return state(unit).stalled; }
 
 std::uint32_t read(int unit, std::uint32_t reg) {
