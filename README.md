@@ -4,7 +4,7 @@ Recompilação estática de **True Crime: New York City** (PlayStation 2) para r
 
 ## Por que este projeto existe
 
-Joguei muito True Crime: New York City na infância. Quando descobri que dava para traduzir o código de um jogo de PS2 para WebAssembly, em vez de emulá-lo instrução por instrução, escolher o jogo foi a parte fácil: queria entender como essa técnica funciona na prática, e nada motiva mais do que ver aquela Nova York de novo, agora dentro de uma aba do navegador.
+True Crime: New York City foi um dos jogos da minha infância. Quando descobri que dava para traduzir o código de um jogo de PS2 para WebAssembly, em vez de emulá-lo instrução por instrução, resolvi entender como funcionava tudo isso. 
 
 Este é um projeto de estudo, sem fins comerciais. O objetivo foi aprender sobre recompilação estática, sobre a arquitetura do PS2 e sobre o que acontece quando um jogo usa o hardware de um jeito que o runtime ainda não conhecia. O trabalho foi feito com a ajuda do [Claude Code](https://claude.com/claude-code), que aparece como coautor nos commits.
 
